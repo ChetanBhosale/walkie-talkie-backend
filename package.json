@@ -4,7 +4,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "build": "bun build"
+    "build": "bun build",
+    "start" : "npx prisma generate && bun run index.ts"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
