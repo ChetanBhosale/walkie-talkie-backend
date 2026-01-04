@@ -3,16 +3,25 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "build": "bun build"
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bcrypt": "^6.0.0",
+    "@types/bun": "latest",
+    "@types/jsonwebtoken": "^9.0.10"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
+    "@prisma/client": "^7.2.0",
     "@types/express": "^5.0.6",
     "@types/ws": "^8.18.1",
+    "bcrypt": "^6.0.0",
     "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "prisma": "^7.2.0",
     "ws": "^8.18.3"
   }
 }
