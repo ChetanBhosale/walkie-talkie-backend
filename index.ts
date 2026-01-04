@@ -1,6 +1,7 @@
 import RedisService from "./services/RedisService.js";
 import { handleAudioChunk, AUDIO_CHANNEL, type AudioChunkMessage } from "./handlers/audioHandler.js";
 import { verifyToken } from "./middleware/auth.js";
+import { verifyRoomMembership, getRoomMemberIds } from "./middleware/roomAuth.js";
 import * as authRoutes from "./routes/auth.js";
 import * as roomRoutes from "./routes/rooms.js";
 
@@ -157,7 +158,7 @@ Bun.serve({
   },
   websocket: {
     // Handle new WebSocket connection
-    open(ws: any) {
+    async open(ws: any) {   
       const { userId, username, roomId } = ws.data;
       console.log(`New WebSocket connection: ${username} (${userId}) in room ${roomId}`);
       
@@ -167,13 +168,21 @@ Bun.serve({
       ws.username = username;
       ws.roomId = roomId;
       
-      // Add to room members set
+      // Add to room members set (in-memory cache)
       const userRoomId = roomId || ws.data.roomId;
       if (userRoomId) {
-        if (!roomMembers.has(userRoomId)) {
-          roomMembers.set(userRoomId, new Set());
+        // Verify membership in database before adding to cache
+        const isMember = await verifyRoomMembership(userId, userRoomId);
+        if (isMember) {
+          if (!roomMembers.has(userRoomId)) {
+            roomMembers.set(userRoomId, new Set());
+          }
+          roomMembers.get(userRoomId)!.add(userId);
+        } else {
+          console.warn(`User ${userId} tried to connect to room ${userRoomId} but is not a member`);
+          ws.close(1008, "Not a member of this room");
+          return;
         }
-        roomMembers.get(userRoomId)!.add(userId);
       }
       
       // Send connection confirmation
@@ -213,8 +222,30 @@ Bun.serve({
           }
           
           try {
+            // SECURITY: Verify user is actually a member of the room (database check)
+            const isMember = await verifyRoomMembership(userId, roomId);
+            if (!isMember) {
+              ws.send(JSON.stringify({
+                type: "error",
+                message: "You are not a member of this room",
+              }));
+              return;
+            }
+            
             const messageType = data.type;
             const targetUserId = data.type === "audio:user" ? data.targetUserId : null;
+            
+            // SECURITY: For private messages, verify target user is in the same room
+            if (messageType === "audio:user" && targetUserId) {
+              const targetIsMember = await verifyRoomMembership(targetUserId, roomId);
+              if (!targetIsMember) {
+                ws.send(JSON.stringify({
+                  type: "error",
+                  message: "Target user is not in this room",
+                }));
+                return;
+              }
+            }
             
             // Prepare audio message
             const audioMessage = {
@@ -231,8 +262,10 @@ Bun.serve({
             
             if (messageType === "audio:room") {
               // Broadcast to all members in the room
+              // Use in-memory map for fast lookup, but sync with DB periodically
               const roomMemberSet = roomMembers.get(roomId);
-              if (roomMemberSet) {
+              if (roomMemberSet && roomMemberSet.size > 0) {
+                // Use in-memory set for performance
                 roomMemberSet.forEach((memberUserId) => {
                   if (memberUserId !== userId) {
                     const clientWs = connectedClients.get(memberUserId);
@@ -248,28 +281,38 @@ Bun.serve({
                     }
                   }
                 });
+              } else {
+                // Fallback: Get members from database if in-memory cache is empty
+                const dbMemberIds = await getRoomMemberIds(roomId);
+                dbMemberIds.forEach((memberUserId) => {
+                  if (memberUserId !== userId) {
+                    const clientWs = connectedClients.get(memberUserId);
+                    if (clientWs && clientWs.readyState === 1) {
+                      try {
+                        clientWs.send(messageStr);
+                        broadcastCount++;
+                      } catch (error) {
+                        console.error(`Error sending to user ${memberUserId}:`, error);
+                        connectedClients.delete(memberUserId);
+                      }
+                    }
+                  }
+                });
               }
             } else if (messageType === "audio:user" && targetUserId) {
               // Send to specific user
               const clientWs = connectedClients.get(targetUserId);
               if (clientWs && clientWs.readyState === 1) {
-                // Verify target user is in the same room
-                const targetRoomMemberSet = roomMembers.get(roomId);
-                if (targetRoomMemberSet && targetRoomMemberSet.has(targetUserId)) {
-                  try {
-                    clientWs.send(messageStr);
-                    broadcastCount = 1;
-                  } catch (error) {
-                    console.error(`Error sending to user ${targetUserId}:`, error);
-                    connectedClients.delete(targetUserId);
+                try {
+                  clientWs.send(messageStr);
+                  broadcastCount = 1;
+                } catch (error) {
+                  console.error(`Error sending to user ${targetUserId}:`, error);
+                  connectedClients.delete(targetUserId);
+                  const targetRoomMemberSet = roomMembers.get(roomId);
+                  if (targetRoomMemberSet) {
                     targetRoomMemberSet.delete(targetUserId);
                   }
-                } else {
-                  ws.send(JSON.stringify({
-                    type: "error",
-                    message: "Target user is not in this room",
-                  }));
-                  return;
                 }
               } else {
                 ws.send(JSON.stringify({
