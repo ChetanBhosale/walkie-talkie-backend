@@ -13,13 +13,13 @@
     "@types/bun": "latest",
     "@types/jsonwebtoken": "^9.0.10",
     "dotenv": "^17.2.3",
-    "prisma": "^7.2.0"
+    "prisma": "^6.19.1"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
-    "@prisma/client": "^7.2.0",
+    "@prisma/client": "^6.19.1",
     "@types/express": "^5.0.6",
     "@types/pg": "^8.16.0",
     "@types/ws": "^8.18.1",
