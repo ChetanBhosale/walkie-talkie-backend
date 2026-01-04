@@ -5,7 +5,8 @@
   "private": true,
   "scripts": {
     "build": "bun build",
-    "start" : "npx prisma generate && bun run index.ts"
+    "start": "bun x prisma generate && bun run index.ts",
+    "postinstall": "bun x prisma generate"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
