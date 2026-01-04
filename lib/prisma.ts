@@ -11,15 +11,10 @@ if (!databaseUrl) {
   console.error("Please set DATABASE_URL in your environment variables.");
 }
 
-// For Prisma 7 with Bun, we need to use Prisma Accelerate or an adapter
-// Since we're using standard PostgreSQL, we'll use Accelerate URL if available
-// Otherwise, fall back to direct connection (may require adapter in Prisma 7)
-const accelerateUrl = process.env.PRISMA_ACCELERATE_URL;
-
+// Prisma 6 works with standard DATABASE_URL without adapters
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
-    ...(accelerateUrl ? { accelerateUrl } : {}),
     log: process.env.NODE_ENV === "development" ? ["query", "error", "warn"] : ["error"],
   });
 
